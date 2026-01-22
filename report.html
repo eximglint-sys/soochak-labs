@@ -12,6 +12,8 @@
         rel="stylesheet">
     <link rel="stylesheet" href="style.css">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- pdf-lib library for PDF form filling -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf-lib/1.17.1/pdf-lib.min.js"></script>
 </head>
 
 <body>
@@ -46,10 +48,11 @@
                 <h1>Natural Ruby <span class="hindi-text">(Manik)</span></h1>
                 <p class="subtitle">A premium specimen verified by Soochak Bharat Labs.</p>
 
+
                 <div class="stats-grid">
                     <div class="stat-item">
                         <span class="label">Report No</span>
-                        <span class="value">SBLB260001</span>
+                        <span class="value" id="reportNumberValue">SBLB260001</span>
                     </div>
                     <div class="stat-item">
                         <span class="label">Weight</span>
@@ -61,6 +64,11 @@
                     </div>
                 </div>
 
+                <div style="margin-top: 2rem; text-align: center;">
+                    <button onclick="downloadReport()" class="download-btn" style="background: linear-gradient(135deg, #3b82f6, #0f172a); color: white; border: none; padding: 1rem 2rem; border-radius: 50px; font-size: 1.1rem; font-weight: 600; cursor: pointer; box-shadow: 0 4px 15px rgba(37, 99, 235, 0.3); transition: all 0.3s ease; display: inline-flex; align-items: center; gap: 0.5rem;" onmouseover="this.style.transform='translateY(-2px)'; this.style.boxShadow='0 6px 20px rgba(37, 99, 235, 0.4)'" onmouseout="this.style.transform='translateY(0)'; this.style.boxShadow='0 4px 15px rgba(37, 99, 235, 0.3)'">
+                        <i class="fas fa-download"></i> Download Report
+                    </button>
+                </div>
 
             </div>
 
@@ -134,7 +142,296 @@
         </section>
     </main>
 
+
     <script src="app.js"></script>
+    <script>
+        let customerName = '';
+        let reportNumber = '';
+
+        // Load report number from URL
+        function loadReportData() {
+            const urlParams = new URLSearchParams(window.location.search);
+            reportNumber = urlParams.get('report') || 'SBLB260001';
+            customerName = 'Customer'; // Default name for PDF filename
+
+            // Update report number display
+            const reportValueElement = document.getElementById('reportNumberValue');
+            if (reportValueElement) {
+                reportValueElement.textContent = reportNumber;
+            }
+
+            // Hide customer name display section
+            const customerNameDisplay = document.getElementById('customerNameDisplay');
+            if (customerNameDisplay) {
+                customerNameDisplay.style.display = 'none';
+            }
+
+            // Update page title
+            document.title = `Soochak Bharat Labs - ${reportNumber}`;
+        }
+
+        // Convert image to base64 to avoid CORS issues
+        function imageToBase64(imgPath) {
+            return new Promise((resolve) => {
+                // For file:// protocol, we need to use XMLHttpRequest
+                if (window.location.protocol === 'file:') {
+                    const xhr = new XMLHttpRequest();
+                    xhr.open('GET', imgPath, true);
+                    xhr.responseType = 'blob';
+                    xhr.onload = function() {
+                        if (xhr.status === 200 || xhr.status === 0) {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result);
+                            reader.onerror = () => resolve('');
+                            reader.readAsDataURL(xhr.response);
+                        } else {
+                            resolve('');
+                        }
+                    };
+                    xhr.onerror = () => resolve('');
+                    try {
+                        xhr.send();
+                    } catch (e) {
+                        resolve('');
+                    }
+                } else {
+                    // For http/https, use fetch
+                    fetch(imgPath)
+                        .then(response => {
+                            if (!response.ok) throw new Error('Image not found');
+                            return response.blob();
+                        })
+                        .then(blob => {
+                            const reader = new FileReader();
+                            reader.onloadend = () => resolve(reader.result);
+                            reader.onerror = () => resolve('');
+                            reader.readAsDataURL(blob);
+                        })
+                        .catch(() => resolve(''));
+                }
+            });
+        }
+
+        // Download report as PDF using the template
+        async function downloadReport() {
+            // Show loading message
+            const downloadBtn = event.target.closest('.download-btn');
+            const originalText = downloadBtn.innerHTML;
+            downloadBtn.innerHTML = '<i class="fas fa-spinner fa-spin"></i> Generating PDF...';
+            downloadBtn.disabled = true;
+
+            try {
+                // Check if pdf-lib is loaded
+                if (typeof PDFLib === 'undefined') {
+                    throw new Error('PDF library not loaded. Please refresh the page.');
+                }
+
+                // Get current date
+                const today = new Date();
+                const dateStr = today.toLocaleDateString('en-US', { 
+                    year: 'numeric', 
+                    month: 'long', 
+                    day: 'numeric' 
+                });
+
+                // Format report number (SBLB260004 -> SBL-2026-0004)
+                let formattedReportNumber = reportNumber;
+                const match = reportNumber.match(/SBLB(\d{2})(\d{4})/);
+                if (match) {
+                    const year = '20' + match[1];
+                    const num = match[2];
+                    formattedReportNumber = `SBL-${year}-${num}`;
+                }
+
+                // Load the PDF template
+                // Handle both file:// and http:// protocols
+                const pdfTemplatePath = 'assets/SOOCHAK BHARAT LABS.pdf';
+                let pdfBytes;
+                
+                if (window.location.protocol === 'file:') {
+                    // For file:// protocol, browsers have security restrictions
+                    // Try to construct absolute path or use XMLHttpRequest
+                    const currentPath = window.location.href.substring(0, window.location.href.lastIndexOf('/'));
+                    const fullPath = currentPath + '/' + pdfTemplatePath;
+                    
+                    try {
+                        // Try XMLHttpRequest first
+                        pdfBytes = await new Promise((resolve, reject) => {
+                            const xhr = new XMLHttpRequest();
+                            xhr.open('GET', pdfTemplatePath, true);
+                            xhr.responseType = 'arraybuffer';
+                            xhr.onload = function() {
+                                if (xhr.status === 200 || xhr.status === 0) {
+                                    resolve(xhr.response);
+                                } else {
+                                    reject(new Error('Failed to load PDF. Status: ' + xhr.status + '. Please use a local web server.'));
+                                }
+                            };
+                            xhr.onerror = function() {
+                                reject(new Error('Cannot load PDF from file:// protocol. Please run a local web server:\n\n1. Open terminal in project folder\n2. Run: python -m http.server 8000\n3. Visit: http://localhost:8000/report.html'));
+                            };
+                            xhr.send();
+                        });
+                    } catch (xhrError) {
+                        throw new Error('Cannot load PDF from file:// protocol due to browser security restrictions.\n\nSOLUTION: Run a local web server:\n1. Open terminal/command prompt in your project folder\n2. Run: python -m http.server 8000\n3. Visit: http://localhost:8000/report.html?report=' + reportNumber);
+                    }
+                } else {
+                    // For http:// or https://, use fetch
+                    const encodedPath = encodeURI(pdfTemplatePath);
+                    const response = await fetch(encodedPath);
+                    if (!response.ok) {
+                        throw new Error('Failed to load PDF template. Status: ' + response.status + '. Please ensure the file exists at: ' + pdfTemplatePath);
+                    }
+                    pdfBytes = await response.arrayBuffer();
+                }
+                const pdfDoc = await PDFLib.PDFDocument.load(pdfBytes);
+                
+                // Get the first page
+                const pages = pdfDoc.getPages();
+                const firstPage = pages[0];
+                const { width, height } = firstPage.getSize();
+
+                // Get fonts
+                const helveticaFont = await pdfDoc.embedFont(PDFLib.StandardFonts.Helvetica);
+                const helveticaBoldFont = await pdfDoc.embedFont(PDFLib.StandardFonts.HelveticaBold);
+
+                // Try to get form fields first (if PDF has form fields)
+                const form = pdfDoc.getForm();
+                const formFields = form.getFields();
+                
+                // Check if PDF has form fields for date and report number
+                let dateField = null;
+                let reportField = null;
+                
+                try {
+                    // Try common field names
+                    const fieldNames = formFields.map(f => f.getName());
+                    console.log('PDF Form Fields:', fieldNames);
+                    
+                    // Look for date field
+                    for (let name of ['date', 'Date', 'DATE', 'reportDate', 'ReportDate']) {
+                        try {
+                            dateField = form.getTextField(name);
+                            break;
+                        } catch (e) {}
+                    }
+                    
+                    // Look for report number field
+                    for (let name of ['reportNumber', 'ReportNumber', 'report', 'Report', 'reportNo', 'ReportNo']) {
+                        try {
+                            reportField = form.getTextField(name);
+                            break;
+                        } catch (e) {}
+                    }
+                } catch (e) {
+                    console.log('No form fields found, will use text positioning');
+                }
+
+                // Fill form fields if they exist, otherwise draw text at coordinates
+                // PDF coordinates: (0,0) is bottom-left, x increases right, y increases up
+                // Standard A4: width = 595 points, height = 842 points
+                
+                // Get PDF dimensions for reference
+                console.log('PDF dimensions:', width, 'x', height);
+                
+                // COORDINATE ADJUSTMENT GUIDE:
+                // - Increase x to move right, decrease to move left
+                // - Increase y to move up, decrease to move down
+                // - 72 points = 1 inch
+                // Adjust these values to match your PDF template's blank fields
+                
+                if (dateField) {
+                    // PDF has form field - use it
+                    dateField.setText(dateStr);
+                    console.log('Date filled in form field');
+                } else {
+                    // No form field - draw text at coordinates
+                    // ADJUST THESE VALUES to match where the date blank is in your PDF:
+                    const dateX = 115;  // Horizontal position (increase to move right)
+                    const dateY = height - 155;  // Vertical position (increase to move up)
+                    const dateSize = 11;  // Font size
+                    
+                    firstPage.drawText(dateStr, {
+                        x: dateX,
+                        y: dateY,
+                        size: dateSize,
+                        font: helveticaFont,
+                        color: PDFLib.rgb(0, 0, 0),
+                    });
+                    console.log('Date drawn at coordinates:', dateX, dateY, 'Size:', dateSize);
+                }
+
+                if (reportField) {
+                    // PDF has form field - use it
+                    reportField.setText(formattedReportNumber);
+                    console.log('Report number filled in form field');
+                } else {
+                    // No form field - draw text at coordinates
+                    // ADJUST THESE VALUES to match where the report number blank is in your PDF:
+                    const reportSize = 11;  // Font size
+                    const reportTextWidth = helveticaBoldFont.widthOfTextAtSize(formattedReportNumber, reportSize);
+                    const reportX = width - 178;  // Horizontal position (decrease to move left, increase to move right)
+                    const reportY = height - 155;  // Vertical position (should match date Y for same row)
+                    
+                    firstPage.drawText(formattedReportNumber, {
+                        x: reportX,
+                        y: reportY,
+                        size: reportSize,
+                        font: helveticaBoldFont,
+                        color: PDFLib.rgb(0, 0, 0),
+                    });
+                    console.log('Report number drawn at coordinates:', reportX, reportY, 'Size:', reportSize);
+                }
+
+                // Save the PDF
+                const pdfBytesModified = await pdfDoc.save();
+                
+                // Create blob and download
+                const blob = new Blob([pdfBytesModified], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                const link = document.createElement('a');
+                link.href = url;
+                link.download = `Soochak_Bharat_Labs_Report_${reportNumber}.pdf`;
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                URL.revokeObjectURL(url);
+                
+                // Restore button
+                downloadBtn.innerHTML = originalText;
+                downloadBtn.disabled = false;
+            } catch (error) {
+                console.error('PDF generation error:', error);
+                
+                let errorMessage = 'Error generating PDF.\n\n';
+                if (error.message.includes('Cannot load PDF from file://') || error.message.includes('SOLUTION')) {
+                    errorMessage = error.message; // Use the detailed message from the error
+                } else if (error.message.includes('Failed to load')) {
+                    errorMessage += 'The PDF template file might be missing or inaccessible.\n';
+                    errorMessage += 'Please ensure "SOOCHAK BHARAT LABS.pdf" exists in the assets folder.\n\n';
+                    errorMessage += 'SOLUTION: Run a local web server:\n';
+                    errorMessage += '1. Open terminal in project folder\n';
+                    errorMessage += '2. Run: python -m http.server 8000\n';
+                    errorMessage += '3. Visit: http://localhost:8000/report.html';
+                } else if (error.message.includes('PDF library')) {
+                    errorMessage += 'Please refresh the page to load the PDF library.';
+                } else {
+                    errorMessage += 'Error: ' + error.message + '\n\n';
+                    errorMessage += 'Try running from a local web server for best results.';
+                }
+                
+                alert(errorMessage);
+                
+                downloadBtn.innerHTML = originalText;
+                downloadBtn.disabled = false;
+            }
+        }
+
+        // Load data when page loads
+        document.addEventListener('DOMContentLoaded', () => {
+            loadReportData();
+        });
+    </script>
 </body>
 
 </html>
